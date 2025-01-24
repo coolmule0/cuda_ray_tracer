@@ -38,6 +38,8 @@ public:
     float e[3];
 };
 
+typedef vec3 color;
+typedef vec3 point3;
 
 
 inline std::istream& operator>>(std::istream &is, vec3 &t) {
