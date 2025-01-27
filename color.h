@@ -3,8 +3,6 @@
 
 #include "vec3.h"
 
-#include <iostream>
-
 using color = vec3;
 
 // Takes a [0,1] range vec3/color and prints out a 255 range
