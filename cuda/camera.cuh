@@ -10,8 +10,9 @@ class camera {
     // double aspect_ratio = 1.0;  // Ratio of image width over height
     int    image_width  = 100;  // Rendered image width in pixel count
     int    image_height = 120;
+    int    samples_per_pixel = 10;
 
-    void render(color *fb, hittable **world);
+    void render(color *fb, hittable **world, curandState *rand_state);
     // {
     //     initialize();
 
@@ -59,6 +60,7 @@ class camera {
   private:
     // int    image_height;   // Rendered image height
     // int    image_width;
+    float pixel_samples_scale; // Color scale factor for a sum of pixel samples
     float  aspect_ratio;   // Ratio of image width over height
     point3 center;         // Camera center
     point3 pixel00_loc;    // Location of pixel 0, 0
@@ -75,19 +77,50 @@ class camera {
         auto a = 0.5f*(unit_direction.y() + 1.0);
         return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
     }
+
+    __device__ ray get_ray(int u, int v) {
+        // Construct a camera ray originating from the origin and directed at randomly sampled
+        // point around the pixel location i, j.
+
+        // auto pixel_sample = pixel00_loc
+        //                   + ((i + offset.x()) * pixel_delta_u)
+        //                   + ((j + offset.y()) * pixel_delta_v);
+
+        auto ray_direction = pixel00_loc + u*pixel_delta_u + v*pixel_delta_v - center;
+
+        return ray(center, ray_direction);
+    }
 };
 
-__device__ void camera::render(color *fb, hittable **world) {
+__device__ void camera::render(color *fb, hittable **world, curandState *rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
     if((i >= image_width) || (j >= image_height)) return;
     int pixel_index = j*image_width + i;
+    curandState local_rand_state = rand_state[pixel_index];
+    color pixel_color(0,0,0);
 
-    auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-    auto ray_direction = pixel_center - center;
+    for (int sample=0; sample < samples_per_pixel; sample++) {
+        // float u = float(i + curand_uniform(&local_rand_state)) / float(image_width);
+        // float v = float(j + curand_uniform(&local_rand_state)) / float(image_height);
+        // ray r = get_ray(u,v);
 
-    ray r(center, ray_direction);
-    fb[pixel_index] = ray_color(r, world);
+        // // ray r = get_ray(i,j);
+        // pixel_color += ray_color(r, world);
+
+        auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
+        auto ray_direction = pixel_center - center;
+
+        ray r(center, ray_direction);
+        pixel_color += ray_color(r, world);
+    }
+    fb[pixel_index] = pixel_color;
+
+    // auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
+    // auto ray_direction = pixel_center - center;
+
+    // ray r(center, ray_direction);
+    // fb[pixel_index] = ray_color(r, world);
 }
 
 #endif

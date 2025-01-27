@@ -1,5 +1,6 @@
 #include <iostream>
 #include <time.h>
+#include <curand_kernel.h>
 
 #include "rtweekend.cuh"
 #include "camera.cuh"
@@ -30,12 +31,21 @@ __device__ color ray_color(const ray& r, hittable **world) {
     return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
 }
 
-__global__ void render(color *fb, camera *camera, hittable **world) {
+__global__ void render_init(int max_x, int max_y, curandState *rand_state) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    int j = threadIdx.y + blockIdx.y * blockDim.y;
+    if((i >= max_x) || (j >= max_y)) return;
+    int pixel_index = j*max_x + i;
+    //Each thread gets same seed, a different sequence number, no offset
+    curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);  
+}
+
+__global__ void render(color *fb, camera *camera, hittable **world, curandState *rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
     if((i >= camera->image_width) || (j >= camera->image_height)) return;
 
-    camera->render(fb, world);
+    camera->render(fb, world, rand_state);
 }
 
 __global__ void create_world(hittable **d_list, hittable **d_world, camera *d_camera, int nx, int ny) {
@@ -64,6 +74,9 @@ int main() {
     int tx = 8;
     int ty = 8;
 
+    dim3 blocks(nx/tx+1,ny/ty+1);
+    dim3 threads(tx,ty);
+
     std::cerr << "Rendering a " << nx << "x" << ny << " image ";
     std::cerr << "in " << tx << "x" << ty << " blocks.\n";
 
@@ -85,12 +98,17 @@ int main() {
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
 
+    // Random numbers per pixel
+    curandState *d_rand_state;
+    checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
+    render_init<<<blocks, threads>>>(nx, ny, d_rand_state);
+    checkCudaErrors(cudaGetLastError());
+    checkCudaErrors(cudaDeviceSynchronize());
+
     clock_t start, stop;
     start = clock();
     // Render our buffer
-    dim3 blocks(nx/tx+1,ny/ty+1);
-    dim3 threads(tx,ty);
-    render<<<blocks, threads>>>(fb, d_camera, d_world);
+    render<<<blocks, threads>>>(fb, d_camera, d_world, d_rand_state);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
     stop = clock();
