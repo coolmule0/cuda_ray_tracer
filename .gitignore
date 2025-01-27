@@ -33,3 +33,5 @@
 
 # Weekend Specific
 *.ppm
+*.nsys-rep
+*.sqlite
