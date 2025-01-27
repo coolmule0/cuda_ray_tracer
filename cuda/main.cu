@@ -2,7 +2,7 @@
 #include <time.h>
 
 #include "rtweekend.cuh"
-
+#include "camera.cuh"
 #include "hittable_list.cuh"
 #include "sphere.cuh"
 
@@ -30,25 +30,25 @@ __device__ color ray_color(const ray& r, hittable **world) {
     return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
 }
 
-__global__ void render(color *fb, int max_x, int max_y,
-                        vec3 camera_center, vec3 pixel00_loc, vec3 pixel_delta_u, vec3 pixel_delta_v, hittable **world) {
+__global__ void render(color *fb, camera *camera, hittable **world) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
-    if((i >= max_x) || (j >= max_y)) return;
-    int pixel_index = j*max_x + i;
+    if((i >= camera->image_width) || (j >= camera->image_height)) return;
 
-    auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-    auto ray_direction = pixel_center - camera_center;
-
-    ray r(camera_center, ray_direction);
-    fb[pixel_index] = ray_color(r, world);
+    camera->render(fb, world);
 }
 
-__global__ void create_world(hittable **d_list, hittable **d_world) {
+__global__ void create_world(hittable **d_list, hittable **d_world, camera *d_camera, int nx, int ny) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *(d_list)   = new sphere(vec3(0,0,-1), 0.5);
         *(d_list+1) = new sphere(vec3(0,-100.5,-1), 100);
         *d_world    = new hittable_list(d_list,2);
+
+        // d_camera  = new camera();
+        d_camera->image_width = nx;
+        d_camera->image_height = ny;
+        d_camera->initialize();
+
     }
 }
 
@@ -70,49 +70,27 @@ int main() {
     int num_pixels = nx*ny;
     size_t fb_size = num_pixels*sizeof(vec3);
 
-    vec3 camera_center = vec3(0,0,0);
-    auto plane_dist = 1.0;
-    auto viewport_height = 2.0;
-    auto viewport_width = viewport_height * (double(nx)/ny);
-    auto viewport_u = vec3(viewport_width, 0, 0);
-    auto viewport_v = vec3(0, -viewport_height, 0);
-    auto pixel_delta_u = viewport_u / nx;
-    auto pixel_delta_v = viewport_v / ny;
+    // allocate FB
+    vec3 *fb;
+    checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
 
-    vec3 focal = vec3(0,0,1);
-    vec3 horizontal = vec3(1,0,0);
-    vec3 vertical = vec3(0,1,0);
-    auto viewport_upper_left = camera_center
-                             - vec3(0, 0, plane_dist) - viewport_u/2 - viewport_v/2;
-
-    auto pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
-
-    // World
+    // World & Camera
+    camera *d_camera;
+    checkCudaErrors(cudaMallocManaged((void **)&d_camera, sizeof(camera)));
     hittable **d_list;
     checkCudaErrors(cudaMalloc((void **)&d_list, 2*sizeof(hittable *)));
     hittable **d_world;
     checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(hittable *)));
-    create_world<<<1,1>>>(d_list,d_world);
+    create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
-
-    // hittable_list world;
-
-    // world.add(make_shared<sphere>(point3(0,0,-1), 0.5));
-    // world.add(make_shared<sphere>(point3(0,-100.5,-1), 100));
-
-    // allocate FB
-    vec3 *fb;
-    checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
 
     clock_t start, stop;
     start = clock();
     // Render our buffer
     dim3 blocks(nx/tx+1,ny/ty+1);
     dim3 threads(tx,ty);
-    render<<<blocks, threads>>>(fb, nx, ny, 
-                        camera_center, pixel00_loc, pixel_delta_u, pixel_delta_v, 
-                        d_world);
+    render<<<blocks, threads>>>(fb, d_camera, d_world);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
     stop = clock();
@@ -138,6 +116,7 @@ int main() {
     checkCudaErrors(cudaFree(d_list));
     checkCudaErrors(cudaFree(d_world));
     checkCudaErrors(cudaFree(fb));
+    checkCudaErrors(cudaFree(d_camera));
 
     // useful for cuda-memcheck --leak-check full
     cudaDeviceReset();
