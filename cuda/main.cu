@@ -57,6 +57,7 @@ __global__ void create_world(hittable **d_list, hittable **d_world, camera *d_ca
         // d_camera  = new camera();
         d_camera->image_width = nx;
         d_camera->image_height = ny;
+        d_camera->samples_per_pixel = 10;
         d_camera->initialize();
 
     }
