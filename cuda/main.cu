@@ -6,6 +6,7 @@
 #include "camera.cuh"
 #include "hittable_list.cuh"
 #include "sphere.cuh"
+#include "color.cuh"
 
 // limited version of checkCudaErrors from helper_cuda.h in CUDA examples
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
@@ -20,16 +21,16 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
     }
 }
 
-__device__ color ray_color(const ray& r, hittable **world) {
-    hit_record rec;
-    if ((*world)->hit(r, interval(0, infinity), rec)) {
-        return 0.5f * (rec.normal + color(1,1,1));
-    }
+// __device__ color ray_color(const ray& r, hittable_list **world) {
+//     hit_record rec;
+//     if ((*world)->hit(r, interval(0, infinity), rec)) {
+//         return 0.5f * (rec.normal + color(1,1,1));
+//     }
 
-    vec3 unit_direction = unit_vector(r.direction());
-    auto a = 0.5f*(unit_direction.y() + 1.0);
-    return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
-}
+//     vec3 unit_direction = unit_vector(r.direction());
+//     auto a = 0.5f*(unit_direction.y() + 1.0);
+//     return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
+// }
 
 __global__ void render_init(int max_x, int max_y, curandState *rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -40,7 +41,7 @@ __global__ void render_init(int max_x, int max_y, curandState *rand_state) {
     curand_init(1984, pixel_index, 0, &rand_state[pixel_index]);  
 }
 
-__global__ void render(color *fb, camera *camera, hittable **world, curandState *rand_state) {
+__global__ void render(color *fb, camera *camera, hittable_list **world, curandState *rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
     if((i >= camera->image_width) || (j >= camera->image_height)) return;
@@ -48,28 +49,35 @@ __global__ void render(color *fb, camera *camera, hittable **world, curandState 
     camera->render(fb, world, rand_state);
 }
 
-__global__ void create_world(hittable **d_list, hittable **d_world, camera *d_camera, int nx, int ny) {
+__global__ void create_world(hittable **d_list, hittable_list **d_world, camera *d_camera, int nx, int ny) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         *(d_list)   = new sphere(vec3(0,0,-1), 0.5);
         *(d_list+1) = new sphere(vec3(0,-100.5,-1), 100);
         *d_world    = new hittable_list(d_list,2);
+        // d_world->list_size = 2;
 
-        // d_camera  = new camera();
         d_camera->image_width = nx;
         d_camera->image_height = ny;
-        d_camera->samples_per_pixel = 10;
+        d_camera->samples_per_pixel = 100;
+        d_camera->ray_bounces = 100;
         d_camera->initialize();
-
     }
 }
 
-__global__ void free_world(hittable **d_list, hittable **d_world) {
+__global__ void free_world(hittable **d_list, hittable_list **d_world, camera * d_camera) {
     delete *(d_list);
     delete *(d_list+1);
     delete *d_world;
+    // delete d_camera;
 }
 
 int main() {
+
+    // Check and up the stack size per thread
+    size_t stackSize;   
+    cudaDeviceSetLimit(cudaLimitStackSize, 8192); //8kb
+    // cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
+
     int nx = 1200;
     int ny = 600;
     int tx = 8;
@@ -90,11 +98,11 @@ int main() {
 
     // World & Camera
     camera *d_camera;
-    checkCudaErrors(cudaMallocManaged((void **)&d_camera, sizeof(camera)));
+    checkCudaErrors(cudaMallocManaged((void **)&d_camera, sizeof(camera *)));
     hittable **d_list;
     checkCudaErrors(cudaMalloc((void **)&d_list, 2*sizeof(hittable *)));
-    hittable **d_world;
-    checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(hittable *)));
+    hittable_list **d_world;
+    checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(hittable_list *)));
     create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
@@ -118,19 +126,20 @@ int main() {
 
     // Output FB as Image
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
-    for (int j = 0; j < ny; j++) {
-        for (int i = 0; i < nx; i++) {
-            size_t pixel_index = j*nx + i;
-            int ir = int(255.99*fb[pixel_index].r());
-            int ig = int(255.99*fb[pixel_index].g());
-            int ib = int(255.99*fb[pixel_index].b());
-            std::cout << ir << " " << ig << " " << ib << "\n";
-        }
-    }
+    write_color(std::cout, fb, nx, ny);
+    // for (int j = 0; j < ny; j++) {
+    //     for (int i = 0; i < nx; i++) {
+    //         size_t pixel_index = j*nx + i;
+    //         int ir = int(255.99*fb[pixel_index].r());
+    //         int ig = int(255.99*fb[pixel_index].g());
+    //         int ib = int(255.99*fb[pixel_index].b());
+    //         std::cout << ir << " " << ig << " " << ib << "\n";
+    //     }
+    // }
 
     // clean up
     checkCudaErrors(cudaDeviceSynchronize());
-    free_world<<<1,1>>>(d_list,d_world);
+    free_world<<<1,1>>>(d_list, d_world, d_camera);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaFree(d_list));
     checkCudaErrors(cudaFree(d_world));

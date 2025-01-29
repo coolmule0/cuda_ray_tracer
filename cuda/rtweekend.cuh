@@ -14,7 +14,9 @@ using std::shared_ptr;
 
 // Constants
 
-const float infinity = std::numeric_limits<float>::infinity();
+// #define MAXFLOAT infinity
+// const float infinity = std::numeric_limits<float>::infinity();
+const float infinity = INFINITY;
 const float pi = 3.1415926535897932385;
 
 // Utility Functions

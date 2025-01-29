@@ -145,4 +145,21 @@ __host__ __device__ inline vec3 unit_vector(vec3 v) {
     return v / v.length();
 }
 
+__device__ inline vec3 random_unit_vector(curandState *local_rand_state) {
+    vec3 p;
+    do {
+        p = 2.0f*vec3(curand_uniform(local_rand_state),curand_uniform(local_rand_state),curand_uniform(local_rand_state)) - vec3(1,1,1);
+    } while (p.squared_length() >= 1.0f);
+    return p;
+}
+
+__device__ inline vec3 random_on_hemisphere(const vec3& normal, curandState *local_rand_state) {
+    vec3 on_unit_sphere = random_unit_vector(local_rand_state);
+    if (dot(on_unit_sphere, normal) > 0.0) // In the same hemisphere as the normal
+        return on_unit_sphere;
+    else
+        return -on_unit_sphere;
+}
+
+
 #endif

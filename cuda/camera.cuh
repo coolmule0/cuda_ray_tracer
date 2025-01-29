@@ -2,6 +2,7 @@
 #define CAMERA_H
 
 #include "hittable.cuh"
+#include "hittable_list.cuh"
 #include "interval.cuh"
 #include "vec3.cuh"
 
@@ -11,27 +12,10 @@ class camera {
     int    image_width  = 100;  // Rendered image width in pixel count
     int    image_height = 120;
     int    samples_per_pixel;
+    int    ray_bounces;
 
-    __device__ void render(color *fb, hittable **world, curandState *rand_state);
-    // {
-    //     initialize();
-
-    //     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
-
-    //     for (int j = 0; j < image_height; j++) {
-    //         std::clog << "\rScanlines remaining: " << (image_height - j) << ' ' << std::flush;
-    //         for (int i = 0; i < image_width; i++) {
-    //             auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-    //             auto ray_direction = pixel_center - center;
-    //             ray r(center, ray_direction);
-
-    //             color pixel_color = ray_color(r, world);
-    //             write_color(std::cout, pixel_color);
-    //         }
-    //     }
-
-    //     std::clog << "\rDone.                 \n";
-    // }
+    __device__ void render(color *fb, hittable_list **world, curandState *rand_state);
+    
     __device__ void initialize() {
         // aspect_ratio = float(image_width) / float(image_height);
 
@@ -60,8 +44,6 @@ class camera {
 
 
   private:
-    // int    image_height;   // Rendered image height
-    // int    image_width;
     float pixel_samples_scale; // Color scale factor for a sum of pixel samples
     // float  aspect_ratio;   // Ratio of image width over height
     point3 center;         // Camera center
@@ -69,32 +51,34 @@ class camera {
     vec3   pixel_delta_u;  // Offset to pixel to the right
     vec3   pixel_delta_v;  // Offset to pixel below
 
-    __device__ color ray_color(const ray& r, hittable **world) {
-        hit_record rec;
-        if ((*world)->hit(r, interval(0, infinity), rec)) {
-            return 0.5f * (rec.normal + color(1,1,1));
+    __device__ color ray_color(const ray& r, hittable_list **world, curandState *local_rand_state) {
+        ray cur_ray = r;
+        float cur_attenuation = 1.0f;
+        for(int i = 0; i < ray_bounces; i++) {
+            hit_record rec;
+            if ((*world)->hit(cur_ray, interval(0.001f, infinity), rec)) {
+                vec3 target = rec.p + rec.normal + random_on_hemisphere(rec.normal, local_rand_state);
+                cur_attenuation *= 0.5f;
+                cur_ray = ray(rec.p, target - rec.p);
+            }
+            else {
+                vec3 unit_direction = unit_vector(cur_ray.direction());
+                float a = 0.5f*(unit_direction.y() + 1.0f);
+                vec3 c = (1.0f-a)*vec3(1.0, 1.0, 1.0) + a*vec3(0.5, 0.7, 1.0);
+                return cur_attenuation * c;
+            }
         }
-
-        vec3 unit_direction = unit_vector(r.direction());
-        auto a = 0.5f*(unit_direction.y() + 1.0);
-        return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
+        return vec3(0.0,0.0,0.0); // exceeded recursion
     }
 
     __device__ ray get_ray(int u, int v) {
-        // Construct a camera ray originating from the origin and directed at randomly sampled
-        // point around the pixel location i, j.
-
-        // auto pixel_sample = pixel00_loc
-        //                   + ((i + offset.x()) * pixel_delta_u)
-        //                   + ((j + offset.y()) * pixel_delta_v);
-
         auto ray_direction = pixel00_loc + u*pixel_delta_u + v*pixel_delta_v - center;
 
         return ray(center, ray_direction);
     }
 };
 
-__device__ void camera::render(color *fb, hittable **world, curandState *rand_state) {
+__device__ void camera::render(color *fb, hittable_list **world, curandState *rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
     if((i >= image_width) || (j >= image_height)) return;
@@ -108,22 +92,10 @@ __device__ void camera::render(color *fb, hittable **world, curandState *rand_st
         auto ray_direction = pixel00_loc + u*pixel_delta_u + v*pixel_delta_v - center;
         ray r = ray(center, ray_direction);
 
-        // // ray r = get_ray(i,j);
-        pixel_color += ray_color(r, world);
+        pixel_color += ray_color(r, world, rand_state);
 
-        // auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-        // auto ray_direction = pixel_center - center;
-
-        // ray r(center, ray_direction);
-        // pixel_color += ray_color(r, world);
     }
     fb[pixel_index] = pixel_samples_scale * pixel_color;
-
-    // auto pixel_center = pixel00_loc + (i * pixel_delta_u) + (j * pixel_delta_v);
-    // auto ray_direction = pixel_center - center;
-
-    // ray r(center, ray_direction);
-    // fb[pixel_index] = ray_color(r, world);
 }
 
 #endif
