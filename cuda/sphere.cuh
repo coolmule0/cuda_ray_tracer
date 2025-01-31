@@ -2,12 +2,12 @@
 #define SPHERE_H
 
 #include "hittable.cuh"
-#include "vec3.cuh"
+#include "material.cuh"
 #include "vec3.cuh"
 
 class sphere : public hittable {
   public:
-    __device__ sphere(const point3& center, float radius) : center(center), radius(radius) {};
+    __device__ sphere(const point3& center, float radius, material* mat) : center(center), radius(radius), mat(mat) {};
 
     __device__ bool hit(const ray& r, interval ray_t, hit_record& rec) const override {
         vec3 oc = center - r.origin();
@@ -33,13 +33,19 @@ class sphere : public hittable {
         rec.p = r.at(rec.t);
         vec3 outward_normal = (rec.p - center) / radius;
         rec.set_face_normal(r, outward_normal);
+        rec.mat = mat;
 
         return true;
+    }
+
+    __device__ void delete_mat() {
+      delete mat;
     }
 
   private:
     point3 center;
     double radius;
+    material *mat;
 };
 
 #endif

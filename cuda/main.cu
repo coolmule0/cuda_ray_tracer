@@ -7,6 +7,7 @@
 #include "hittable_list.cuh"
 #include "sphere.cuh"
 #include "color.cuh"
+#include "material.cuh"
 
 // limited version of checkCudaErrors from helper_cuda.h in CUDA examples
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
@@ -20,17 +21,6 @@ void check_cuda(cudaError_t result, char const *const func, const char *const fi
         exit(99);
     }
 }
-
-// __device__ color ray_color(const ray& r, hittable_list **world) {
-//     hit_record rec;
-//     if ((*world)->hit(r, interval(0, infinity), rec)) {
-//         return 0.5f * (rec.normal + color(1,1,1));
-//     }
-
-//     vec3 unit_direction = unit_vector(r.direction());
-//     auto a = 0.5f*(unit_direction.y() + 1.0);
-//     return (1.f-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
-// }
 
 __global__ void render_init(int max_x, int max_y, curandState *rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -51,22 +41,30 @@ __global__ void render(color *fb, camera *camera, hittable_list **world, curandS
 
 __global__ void create_world(hittable **d_list, hittable_list **d_world, camera *d_camera, int nx, int ny) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        *(d_list)   = new sphere(vec3(0,0,-1), 0.5);
-        *(d_list+1) = new sphere(vec3(0,-100.5,-1), 100);
-        *d_world    = new hittable_list(d_list,2);
+        d_list[0]   = new sphere(vec3(0,0,-1), 0.5,
+                        new lambertian(color(0.8, 0.3, 0.3)));
+        d_list[1] = new sphere(vec3(0,-100.5,-1), 100,
+                        new lambertian(vec3(0.8, 0.8, 0.0)));
+        d_list[2] = new sphere(vec3(1,0,-1), 0.5,
+                               new metal(vec3(0.8, 0.6, 0.2), 1.0));
+        d_list[3] = new sphere(vec3(-1,0,-1), 0.5,
+                               new metal(vec3(0.8, 0.8, 0.8), 0.3));
+        *d_world    = new hittable_list(d_list,4);
         // d_world->list_size = 2;
 
         d_camera->image_width = nx;
         d_camera->image_height = ny;
         d_camera->samples_per_pixel = 100;
-        d_camera->ray_bounces = 100;
+        d_camera->ray_bounces = 50;
         d_camera->initialize();
     }
 }
 
 __global__ void free_world(hittable **d_list, hittable_list **d_world, camera * d_camera) {
-    delete *(d_list);
-    delete *(d_list+1);
+    for(int i=0; i < 4; i++) {
+        ((sphere *)d_list[i])->delete_mat();
+        delete d_list[i];
+    }
     delete *d_world;
     // delete d_camera;
 }

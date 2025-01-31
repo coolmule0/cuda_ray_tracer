@@ -34,6 +34,7 @@ public:
     __host__ __device__ inline float squared_length() const { return e[0]*e[0] + e[1]*e[1] + e[2]*e[2]; }
     __host__ __device__ inline float length_squared() const { return squared_length(); }
     __host__ __device__ inline void make_unit_vector();
+    __host__ __device__ inline bool near_zero() const;
 
 
     float e[3];
@@ -161,5 +162,14 @@ __device__ inline vec3 random_on_hemisphere(const vec3& normal, curandState *loc
         return -on_unit_sphere;
 }
 
+__device__ inline vec3 reflect(const vec3& v, const vec3& n) {
+    return v - 2*dot(v,n)*n;
+}
+
+__host__ __device__ bool vec3::near_zero() const {
+    // Return true if the vector is close to zero in all dimensions.
+    auto s = 1e-8;
+    return (e[0]*e[0] < s*s) && (e[1]*e[1] < s*s) && (e[2]*e[2] < s*s);
+}
 
 #endif

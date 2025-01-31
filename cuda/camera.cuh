@@ -5,6 +5,7 @@
 #include "hittable_list.cuh"
 #include "interval.cuh"
 #include "vec3.cuh"
+#include "material.cuh"
 
 class camera {
   public:
@@ -53,13 +54,22 @@ class camera {
 
     __device__ color ray_color(const ray& r, hittable_list **world, curandState *local_rand_state) {
         ray cur_ray = r;
-        float cur_attenuation = 1.0f;
+        color cur_attenuation = vec3(1.0,1.0,1.0);
         for(int i = 0; i < ray_bounces; i++) {
             hit_record rec;
             if ((*world)->hit(cur_ray, interval(0.001f, infinity), rec)) {
-                vec3 target = rec.p + rec.normal + random_on_hemisphere(rec.normal, local_rand_state);
-                cur_attenuation *= 0.5f;
-                cur_ray = ray(rec.p, target - rec.p);
+                ray scattered;
+                color attenuation;
+                if (rec.mat->scatter(r, rec, attenuation, scattered, local_rand_state)){
+                    cur_attenuation *= attenuation;
+                    cur_ray = scattered;
+                }
+                else {
+                    return vec3(0.0, 0.0, 0.0);
+                }
+                // vec3 target = rec.p + rec.normal + random_on_hemisphere(rec.normal, local_rand_state);
+                // cur_attenuation *= 0.5f;
+                // cur_ray = ray(rec.p, target - rec.p);
             }
             else {
                 vec3 unit_direction = unit_vector(cur_ray.direction());
