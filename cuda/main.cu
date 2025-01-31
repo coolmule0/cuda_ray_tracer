@@ -39,29 +39,74 @@ __global__ void render(color *fb, camera *camera, hittable_list **world, curandS
     camera->render(fb, world, rand_state);
 }
 
-__global__ void create_world(hittable **d_list, hittable_list **d_world, camera *d_camera, int nx, int ny) {
+#define RND (curand_uniform(&local_rand_state))
+
+__global__ void create_world(hittable **d_list, hittable_list **d_world, camera *d_camera, int nx, int ny, curandState *rand_state) {
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        d_list[0]   = new sphere(vec3(0,0,-1), 0.5,
-                        new lambertian(color(0.8, 0.3, 0.3)));
-        d_list[1] = new sphere(vec3(0,-100.5,-1), 100,
-                        new lambertian(vec3(0.8, 0.8, 0.0)));
-        d_list[2] = new sphere(vec3(1,0,-1), 0.5,
-                               new metal(vec3(0.8, 0.6, 0.2), 1.0));
-        d_list[3] = new sphere(vec3(-1,0,-1), 0.5,
-                               new metal(vec3(0.8, 0.8, 0.8), 0.3));
-        *d_world    = new hittable_list(d_list,4);
-        // d_world->list_size = 2;
+        curandState local_rand_state = *rand_state;
+
+        // d_list[0]   = new sphere(vec3(0,0,-1), 0.5,
+        //                 new lambertian(color(0.8, 0.3, 0.3)));
+        // d_list[1] = new sphere(vec3(0,-100.5,-1), 100,
+        //                 new lambertian(vec3(0.8, 0.8, 0.0)));
+        // d_list[2] = new sphere(vec3(1,0,-1), 0.5,
+        //                        new metal(vec3(0.8, 0.6, 0.2), 1.0));
+        // d_list[3] = new sphere(vec3(-1,0,-1), 0.5,
+        //                        new metal(vec3(0.8, 0.8, 0.8), 0.3));
+        // *d_world    = new hittable_list(d_list,4);
+        // // d_world->list_size = 2;
 
         d_camera->image_width = nx;
         d_camera->image_height = ny;
-        d_camera->samples_per_pixel = 100;
-        d_camera->ray_bounces = 50;
+        d_camera->samples_per_pixel = 1;
+        d_camera->ray_bounces = 1;
+        d_camera->vfov = 20;
+        d_camera->lookfrom = point3(13,2,3);
+        d_camera->lookat   = point3(0,0,0);
+        d_camera->vup      = vec3(0,1,0);
         d_camera->initialize();
+
+        d_list[0] = new sphere(vec3(0,-1000.0,-1), 1000,
+                                new lambertian(vec3(0.5, 0.5, 0.5)));
+
+        int i=1;
+        for (int a = -11; a < -3; a++) {
+            for (int b = -11; b < -3; b++) {
+                auto choose_mat = RND;
+                point3 center(a + 0.9*RND, 0.2, b + 0.9*RND);
+
+                if ((center - point3(4, 0.2, 0)).length() > 0.9) {
+                    // shared_ptr<material> sphere_material;
+
+                    if (choose_mat < 0.8) {
+                        // diffuse
+                        d_list[i++] = new sphere(center, 0.2, new lambertian(color(vec3(RND*RND, RND*RND, RND*RND))));
+                        // auto albedo = color::random() * color::random();
+                        // sphere_material = make_shared<lambertian>(albedo);
+                        // world.add(make_shared<sphere>(center, 0.2, sphere_material));
+                    } else {
+                        // metal
+                        d_list[i++] = new sphere(center, 0.2,
+                                             new metal(vec3(0.5f*(1.0f+RND), 0.5f*(1.0f+RND), 0.5f*(1.0f+RND)), 0.5f*RND));           
+                        // auto albedo = color::random(0.5, 1);
+                        // auto fuzz = random_double(0, 0.5);
+                        // sphere_material = make_shared<metal>(albedo, fuzz);
+                        // world.add(make_shared<sphere>(center, 0.2, sphere_material));
+                    }
+                }
+            }
+        }
+
+        d_list[i++] = new sphere(vec3(-4, 1, 0), 1.0, new lambertian(vec3(0.4, 0.2, 0.1)));
+        d_list[i++] = new sphere(vec3(4, 1, 0),  1.0, new metal(vec3(0.7, 0.6, 0.5), 0.0));
+        *rand_state = local_rand_state;
+        *d_world  = new hittable_list(d_list, 8*8+1+2);
+        // *d_world  = new hittable_list(d_list, 1+2);
     }
 }
 
 __global__ void free_world(hittable **d_list, hittable_list **d_world, camera * d_camera) {
-    for(int i=0; i < 4; i++) {
+    for(int i=0; i < 22*22+1+2; i++) {
         ((sphere *)d_list[i])->delete_mat();
         delete d_list[i];
     }
@@ -73,13 +118,26 @@ int main() {
 
     // Check and up the stack size per thread
     size_t stackSize;   
-    cudaDeviceSetLimit(cudaLimitStackSize, 8192); //8kb
+    checkCudaErrors(cudaDeviceSetLimit(cudaLimitStackSize, 8192*4)); //8kb
     // cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
+
 
     int nx = 1200;
     int ny = 600;
     int tx = 8;
     int ty = 8;
+
+    // int blockSize;   // The launch configurator returned block size 
+    // int minGridSize; // The minimum grid size needed to achieve the 
+    //                // maximum occupancy for a full device launch 
+    // int gridSize;    // The actual grid size needed, based on input size 
+
+    // cudaOccupancyMaxPotentialBlockSize( &minGridSize, &blockSize, 
+    //                                   render, 0, 0); 
+
+    // // Round up according to array size 
+    // gridSize = (nx * ny + blockSize - 1) / blockSize;
+    // std::cerr << gridSize << " blocks and " << blockSize << " threads\n";
 
     dim3 blocks(nx/tx+1,ny/ty+1);
     dim3 threads(tx,ty);
@@ -94,6 +152,13 @@ int main() {
     vec3 *fb;
     checkCudaErrors(cudaMallocManaged((void **)&fb, fb_size));
 
+    // Random numbers per pixel
+    curandState *d_rand_state;
+    checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
+    render_init<<<blocks, threads>>>(nx, ny, d_rand_state);
+    checkCudaErrors(cudaGetLastError());
+    checkCudaErrors(cudaDeviceSynchronize());
+
     // World & Camera
     camera *d_camera;
     checkCudaErrors(cudaMallocManaged((void **)&d_camera, sizeof(camera *)));
@@ -101,16 +166,10 @@ int main() {
     checkCudaErrors(cudaMalloc((void **)&d_list, 2*sizeof(hittable *)));
     hittable_list **d_world;
     checkCudaErrors(cudaMalloc((void **)&d_world, sizeof(hittable_list *)));
-    create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny);
+    create_world<<<1,1>>>(d_list, d_world, d_camera, nx, ny, d_rand_state);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
 
-    // Random numbers per pixel
-    curandState *d_rand_state;
-    checkCudaErrors(cudaMalloc((void **)&d_rand_state, num_pixels*sizeof(curandState)));
-    render_init<<<blocks, threads>>>(nx, ny, d_rand_state);
-    checkCudaErrors(cudaGetLastError());
-    checkCudaErrors(cudaDeviceSynchronize());
 
     clock_t start, stop;
     start = clock();
