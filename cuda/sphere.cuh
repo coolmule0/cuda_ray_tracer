@@ -19,12 +19,10 @@ class sphere : public hittable {
         if (discriminant < 0)
             return false;
 
-        auto sqrtd = std::sqrt(discriminant);
-
         // Find the nearest root that lies in the acceptable range.
-        auto root = (h - sqrtd) / a;
+        auto root = (h - sqrt(discriminant)) / a;
         if (!ray_t.surrounds(root)) {
-            root = (h + sqrtd) / a;
+            root = (h + sqrt(discriminant)) / a;
             if (!ray_t.surrounds(root))
                 return false;
         }

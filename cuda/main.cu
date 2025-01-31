@@ -45,21 +45,10 @@ __global__ void create_world(hittable **d_list, hittable_list **d_world, camera 
     if (threadIdx.x == 0 && blockIdx.x == 0) {
         curandState local_rand_state = *rand_state;
 
-        // d_list[0]   = new sphere(vec3(0,0,-1), 0.5,
-        //                 new lambertian(color(0.8, 0.3, 0.3)));
-        // d_list[1] = new sphere(vec3(0,-100.5,-1), 100,
-        //                 new lambertian(vec3(0.8, 0.8, 0.0)));
-        // d_list[2] = new sphere(vec3(1,0,-1), 0.5,
-        //                        new metal(vec3(0.8, 0.6, 0.2), 1.0));
-        // d_list[3] = new sphere(vec3(-1,0,-1), 0.5,
-        //                        new metal(vec3(0.8, 0.8, 0.8), 0.3));
-        // *d_world    = new hittable_list(d_list,4);
-        // // d_world->list_size = 2;
-
         d_camera->image_width = nx;
         d_camera->image_height = ny;
-        d_camera->samples_per_pixel = 1;
-        d_camera->ray_bounces = 1;
+        d_camera->samples_per_pixel = 100;
+        d_camera->ray_bounces = 100;
         d_camera->vfov = 20;
         d_camera->lookfrom = point3(13,2,3);
         d_camera->lookat   = point3(0,0,0);
@@ -70,8 +59,8 @@ __global__ void create_world(hittable **d_list, hittable_list **d_world, camera 
                                 new lambertian(vec3(0.5, 0.5, 0.5)));
 
         int i=1;
-        for (int a = -11; a < -3; a++) {
-            for (int b = -11; b < -3; b++) {
+        for (int a = 0; a < 6; a++) {
+            for (int b = 0; b < 6; b++) {
                 auto choose_mat = RND;
                 point3 center(a + 0.9*RND, 0.2, b + 0.9*RND);
 
@@ -100,13 +89,12 @@ __global__ void create_world(hittable **d_list, hittable_list **d_world, camera 
         d_list[i++] = new sphere(vec3(-4, 1, 0), 1.0, new lambertian(vec3(0.4, 0.2, 0.1)));
         d_list[i++] = new sphere(vec3(4, 1, 0),  1.0, new metal(vec3(0.7, 0.6, 0.5), 0.0));
         *rand_state = local_rand_state;
-        *d_world  = new hittable_list(d_list, 8*8+1+2);
-        // *d_world  = new hittable_list(d_list, 1+2);
+        *d_world  = new hittable_list(d_list, 6*6+1+2);
     }
 }
 
 __global__ void free_world(hittable **d_list, hittable_list **d_world, camera * d_camera) {
-    for(int i=0; i < 22*22+1+2; i++) {
+    for(int i=0; i < 6*6+1+2; i++) {
         ((sphere *)d_list[i])->delete_mat();
         delete d_list[i];
     }
@@ -118,7 +106,7 @@ int main() {
 
     // Check and up the stack size per thread
     size_t stackSize;   
-    checkCudaErrors(cudaDeviceSetLimit(cudaLimitStackSize, 8192*4)); //8kb
+    checkCudaErrors(cudaDeviceSetLimit(cudaLimitStackSize, 8192*16)); //8kb
     // cudaDeviceGetLimit(&stackSize, cudaLimitStackSize);
 
 

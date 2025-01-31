@@ -166,7 +166,7 @@ __device__ inline vec3 reflect(const vec3& v, const vec3& n) {
     return v - 2*dot(v,n)*n;
 }
 
-__host__ __device__ bool vec3::near_zero() const {
+__host__ __device__ inline bool vec3::near_zero() const {
     // Return true if the vector is close to zero in all dimensions.
     auto s = 1e-8;
     return (e[0]*e[0] < s*s) && (e[1]*e[1] < s*s) && (e[2]*e[2] < s*s);
