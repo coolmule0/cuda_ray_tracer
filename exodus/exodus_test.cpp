@@ -3,7 +3,7 @@
 #include "exodusII.h"
 
 int main() {
-  std::cout << "Hello world";
+  std::cout << "Hello world" << std::endl;
 
   float version = 0.0;
  

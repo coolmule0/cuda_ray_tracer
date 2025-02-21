@@ -5,6 +5,7 @@
 #include "hittable_list.h"
 #include "sphere.h"
 #include "material.h"
+#include "exodus.h"
 
 int main() {
     hittable_list world;
@@ -45,9 +46,9 @@ int main() {
     camera cam;
 
     cam.aspect_ratio      = 16.0 / 9.0;
-    cam.image_width       = 1200;
-    cam.samples_per_pixel = 500;
-    cam.max_depth         = 50;
+    cam.image_width       = 800;
+    cam.samples_per_pixel = 10;
+    cam.max_depth         = 10;
 
     cam.vfov     = 20;
     cam.lookfrom = point3(13,2,3);

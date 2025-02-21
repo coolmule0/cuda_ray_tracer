@@ -7,11 +7,13 @@ set(EXODUS_LIB_DIR /home/john/Large/john/Programs/seacas/lib)
 
 #### C ####
 add_executable(exodustest exodus_test.cpp)
-
 add_executable(exodusread exodus_reader.cpp)
+add_executable(main main.cpp)
 
 target_include_directories(exodustest PRIVATE ${EXODUS_INCLUDE_DIR})
 target_include_directories(exodusread PRIVATE ${EXODUS_INCLUDE_DIR})
+target_include_directories(main PRIVATE ${EXODUS_INCLUDE_DIR})
 
 target_link_libraries(exodustest PRIVATE ${EXODUS_LIB_DIR}/libexodus.so)
 target_link_libraries(exodusread PRIVATE ${EXODUS_LIB_DIR}/libexodus.so)
+target_link_libraries(main PRIVATE ${EXODUS_LIB_DIR}/libexodus.so)

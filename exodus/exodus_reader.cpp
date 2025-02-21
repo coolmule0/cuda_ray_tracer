@@ -3,7 +3,7 @@
 #include "exodusII.h"
 
 int main() {
-    std::cout << "Reading in an example case\n";
+    std::cout << "Reading in an example case" << std::endl;
 
     const char* filename = "case13_out.e"; // Path to the Exodus file
     
